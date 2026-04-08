@@ -137,7 +137,7 @@ function renderGallery() {
   gallery.innerHTML = "";
 
   images.forEach(img => {
-    const match = img.loading || query === "" || img.tagsArray.some(tag => tag.includes(query));
+    const match = img.loading || (query !== "" && img.tagsArray.some(tag => tag.includes(query)));
     if (!match) return;
 
     const container = document.createElement("div");
