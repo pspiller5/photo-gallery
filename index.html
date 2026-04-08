@@ -34,7 +34,6 @@
 
 <br><br>
 <input type="text" id="searchBox" placeholder="Search photos...">
-
 <div id="gallery"></div>
 
 <!-- Firebase SDK -->
@@ -46,7 +45,7 @@
 
 // ---- Azure Blob Storage ----
 const baseUrl = "https://paulsphotostoragex.blob.core.windows.net/photos/";
-const sasToken = "?sv=2025-11-05&ss=b&srt=co&sp=rwciytfx&se=3026-04-08T21:48:01Z&st=2026-04-08T13:33:01Z&spr=https&sig=mRhQx20NUyJ2EZj2%2FTk9g961ztQhxnMw8agNcl0GZKY%3D";
+const sasToken = "?sv=2025-11-05&ss=b&srt=co&sp=rwciytfx&se=3026-04-08T21:48:01Z&st=2026-04-08T13:33:01Z&spr=https&sig=mRhQx20NUyJ2EZj2%2FTk9g961ztQhxnMw8agNcl0GZKY%3D"; // <- Make sure this is all on one line
 
 // ---- Azure AI Computer Vision ----
 const endpoint = "https://paulstestingai.cognitiveservices.azure.com/";
@@ -93,17 +92,21 @@ async function uploadSingleImage(file) {
   const fileName = Date.now() + "-" + file.name;
   const uploadUrl = baseUrl + fileName + sasToken;
 
-  // Mark newly uploaded image as visible for editing
   const imgObj = { url: baseUrl + fileName, tagsArray: [], loading: true, newlyUploaded: true };
   images.push(imgObj);
   renderGallery();
 
   try {
+    console.log("Uploading:", file.name);
+    console.log("Upload URL:", uploadUrl);
+
     const response = await fetch(uploadUrl, {
       method: "PUT",
       headers: { "x-ms-blob-type": "BlockBlob", "Content-Type": file.type },
       body: file
     });
+
+    console.log("Upload status:", response.status, "OK?", response.ok);
     if (!response.ok) throw new Error("Upload failed");
 
     const result = await analyzeImage(imgObj.url);
@@ -114,7 +117,7 @@ async function uploadSingleImage(file) {
     imgObj.id = docRef.id;
 
     renderGallery();
-  } catch(err) { console.error(err); imgObj.loading = false; renderGallery(); }
+  } catch(err) { console.error("Upload/AI error:", err); imgObj.loading = false; renderGallery(); }
 }
 
 // =================== AI ANALYSIS ===================
@@ -171,8 +174,7 @@ function renderGallery() {
 // =================== SAVE TAGS ===================
 async function saveTags(img, value) {
   img.tagsArray = value.split(",").map(t=>t.trim().toLowerCase()).filter(t=>t);
-  // Remove newlyUploaded flag after editing
-  img.newlyUploaded = false;
+  img.newlyUploaded = false; // remove flag after editing
   if(img.id) await db.collection("photos").doc(img.id).update({ tagsArray: img.tagsArray });
   renderGallery();
 }
@@ -182,7 +184,6 @@ document.getElementById("searchBox").addEventListener("input", renderGallery);
 
 // =================== INITIAL LOAD ===================
 loadImages();
-
 </script>
 </body>
 </html>
