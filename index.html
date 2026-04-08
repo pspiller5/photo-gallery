@@ -1,5 +1,3 @@
-
-  
 <!DOCTYPE html>
 <html>
 <head>
@@ -50,7 +48,6 @@
 const baseUrl = "https://paulsphotostoragex.blob.core.windows.net/photos/";
 const sasToken = "?sv=2024-11-04&ss=b&srt=o&sp=rwctfx&se=2026-04-08T22:21:18Z&st=2026-04-07T14:06:18Z&spr=https&sig=9J3egEjAEKMCFoFcGGeq1riu%2BnCSBa2ytRMuRJAMg48%3D";
 
-
 // ---- Azure AI Computer Vision ----
 const endpoint = "https://paulstestingai.cognitiveservices.azure.com/";
 const key = "ElvasAtHuVAqguIiCFFu0lPO23m9TPFo574FSk3EhnPCBuWhBinsJQQJ99CDACmepeSXJ3w3AAAFACOGqW8v";
@@ -62,7 +59,7 @@ const firebaseConfig = {
   projectId: "photogallery-8e34a",
   storageBucket: "photogallery-8e34a.firebasestorage.app",
   messagingSenderId: "824734545270",
-  appId: "1:824734545270:web:55b091c79270a714edb657",
+  appId: "1:824734545270:web:55b091c79270a714edb657"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
@@ -74,7 +71,7 @@ let images = [];
 async function loadImages() {
   images = [];
   const snapshot = await db.collection("photos").get();
-  snapshot.forEach(doc => images.push({ id: doc.id, ...doc.data(), loading: false }));
+  snapshot.forEach(doc => images.push({ id: doc.id, ...doc.data(), loading: false, newlyUploaded: false }));
   renderGallery();
 }
 
@@ -96,7 +93,8 @@ async function uploadSingleImage(file) {
   const fileName = Date.now() + "-" + file.name;
   const uploadUrl = baseUrl + fileName + sasToken;
 
-  const imgObj = { url: baseUrl + fileName, tagsArray: [], loading: true };
+  // Mark newly uploaded image as visible for editing
+  const imgObj = { url: baseUrl + fileName, tagsArray: [], loading: true, newlyUploaded: true };
   images.push(imgObj);
   renderGallery();
 
@@ -137,7 +135,8 @@ function renderGallery() {
   gallery.innerHTML = "";
 
   images.forEach(img => {
-    const match = img.loading || (query !== "" && img.tagsArray.some(tag => tag.includes(query)));
+    // Show if loading, newly uploaded, or search query matches a tag
+    const match = img.loading || img.newlyUploaded || (query !== "" && img.tagsArray.some(tag => tag.includes(query)));
     if (!match) return;
 
     const container = document.createElement("div");
@@ -172,6 +171,8 @@ function renderGallery() {
 // =================== SAVE TAGS ===================
 async function saveTags(img, value) {
   img.tagsArray = value.split(",").map(t=>t.trim().toLowerCase()).filter(t=>t);
+  // Remove newlyUploaded flag after editing
+  img.newlyUploaded = false;
   if(img.id) await db.collection("photos").doc(img.id).update({ tagsArray: img.tagsArray });
   renderGallery();
 }
@@ -181,6 +182,7 @@ document.getElementById("searchBox").addEventListener("input", renderGallery);
 
 // =================== INITIAL LOAD ===================
 loadImages();
+
 </script>
 </body>
 </html>
