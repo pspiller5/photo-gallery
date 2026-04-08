@@ -1,7 +1,9 @@
+
+  
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Photo App</title>
+  <title>Photo Gallery App</title>
   <style>
     img { width: 200px; margin: 10px; }
     .photo-container { display: inline-block; text-align: center; margin: 10px; vertical-align: top; }
@@ -16,6 +18,7 @@
       margin-bottom: 20px;
       font-size: 16px;
       color: #555;
+      cursor: pointer;
     }
     #drop-zone.dragover {
       border-color: #0b79d0;
@@ -25,138 +28,115 @@
   </style>
 </head>
 <body>
-  <h1>My Photo Gallery</h1>
+<h1>My Photo Gallery</h1>
 
-  <div id="drop-zone">Drag & Drop Images Here or Click to Select</div>
-  <input type="file" id="fileInput" multiple style="display:none;">
-  <button onclick="triggerFileInput()">Upload Selected</button>
+<div id="drop-zone">Drag & Drop Images Here or Click to Select</div>
+<input type="file" id="fileInput" multiple style="display:none;">
+<button onclick="triggerFileInput()">Upload Selected</button>
 
-  <br><br>
-  <input type="text" id="searchBox" placeholder="Search photos...">
+<br><br>
+<input type="text" id="searchBox" placeholder="Search photos...">
 
-  <div id="gallery"></div>
+<div id="gallery"></div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
 <script>
-const images = [];
+// =================== CONFIG ===================
+
+// ---- Azure Blob Storage ----
 const baseUrl = "https://paulsphotostoragex.blob.core.windows.net/photos/";
 const sasToken = "?sv=2024-11-04&ss=b&srt=o&sp=rwctfx&se=2026-04-08T22:21:18Z&st=2026-04-07T14:06:18Z&spr=https&sig=9J3egEjAEKMCFoFcGGeq1riu%2BnCSBa2ytRMuRJAMg48%3D";
+
+
+// ---- Azure AI Computer Vision ----
 const endpoint = "https://paulstestingai.cognitiveservices.azure.com/";
 const key = "ElvasAtHuVAqguIiCFFu0lPO23m9TPFo574FSk3EhnPCBuWhBinsJQQJ99CDACmepeSXJ3w3AAAFACOGqW8v";
 
-// Restore images
-window.addEventListener("load", () => {
-  const storedImages = JSON.parse(localStorage.getItem("images") || "[]");
-  images.push(...storedImages);
-  images.forEach(img => {
-    if (!img.tagsArray || img.tagsArray.length === 0) {
-      img.loading = true;
-      analyzeImage(img.url).then(result => {
-        img.tagsArray = result.tags ? result.tags.map(t => t.name.toLowerCase()) : [];
-        img.loading = false;
-        saveImages();
-        renderGallery();
-      }).catch(() => { img.loading = false; renderGallery(); });
-    }
-  });
+// ---- Firebase ----
+const firebaseConfig = {
+  apiKey: "AIzaSyDIFlXxI8NKcmHtOA-jZ6ueP4GxbsxW9Qo",
+  authDomain: "photogallery-8e34a.firebaseapp.com",
+  projectId: "photogallery-8e34a",
+  storageBucket: "photogallery-8e34a.firebasestorage.app",
+  messagingSenderId: "824734545270",
+  appId: "1:824734545270:web:55b091c79270a714edb657",
+};};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// =================== VARIABLES ===================
+let images = [];
+
+// =================== LOAD IMAGES ===================
+async function loadImages() {
+  images = [];
+  const snapshot = await db.collection("photos").get();
+  snapshot.forEach(doc => images.push({ id: doc.id, ...doc.data(), loading: false }));
   renderGallery();
-});
-
-// Trigger hidden file input
-function triggerFileInput() {
-  document.getElementById("fileInput").click();
 }
 
-// Handle file input selection
-document.getElementById("fileInput").addEventListener("change", (e) => {
-  uploadFiles(e.target.files);
-});
+// =================== UPLOAD IMAGES ===================
+function triggerFileInput() { document.getElementById("fileInput").click(); }
+document.getElementById("fileInput").addEventListener("change", e => uploadFiles(e.target.files));
 
-// Drag & Drop handling
 const dropZone = document.getElementById("drop-zone");
+dropZone.addEventListener("click", triggerFileInput);
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+dropZone.addEventListener("drop", e => { e.preventDefault(); dropZone.classList.remove("dragover"); uploadFiles(e.dataTransfer.files); });
 
-dropZone.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  dropZone.classList.add("dragover");
-});
-
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("dragover");
-});
-
-dropZone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  dropZone.classList.remove("dragover");
-  if (e.dataTransfer.files.length > 0) {
-    uploadFiles(e.dataTransfer.files);
-  }
-});
-
-// Upload multiple files
 function uploadFiles(files) {
-  for (const file of files) {
-    uploadSingleImage(file);
-  }
+  for (const file of files) uploadSingleImage(file);
 }
 
-// Upload single image
 async function uploadSingleImage(file) {
   const fileName = Date.now() + "-" + file.name;
   const uploadUrl = baseUrl + fileName + sasToken;
 
+  const imgObj = { url: baseUrl + fileName, tagsArray: [], loading: true };
+  images.push(imgObj);
+  renderGallery();
+
   try {
     const response = await fetch(uploadUrl, {
       method: "PUT",
-      headers: {
-        "x-ms-blob-type": "BlockBlob",
-        "Content-Type": file.type
-      },
+      headers: { "x-ms-blob-type": "BlockBlob", "Content-Type": file.type },
       body: file
     });
-    if (!response.ok) throw new Error("Upload failed for " + file.name);
+    if (!response.ok) throw new Error("Upload failed");
 
-    const imageUrl = baseUrl + fileName;
-    const imgObj = { url: imageUrl, tagsArray: [], loading: true };
-    images.push(imgObj);
+    const result = await analyzeImage(imgObj.url);
+    imgObj.tagsArray = result.tags ? result.tags.map(t => t.name.toLowerCase()) : [];
+    imgObj.loading = false;
+
+    const docRef = await db.collection("photos").add({ url: imgObj.url, tagsArray: imgObj.tagsArray });
+    imgObj.id = docRef.id;
+
     renderGallery();
-
-    analyzeImage(imageUrl).then(result => {
-      imgObj.tagsArray = result.tags ? result.tags.map(t => t.name.toLowerCase()) : [];
-      imgObj.loading = false;
-      saveImages();
-      renderGallery();
-    }).catch(() => { imgObj.loading = false; renderGallery(); });
-
-  } catch (err) {
-    console.error(err);
-  }
+  } catch(err) { console.error(err); imgObj.loading = false; renderGallery(); }
 }
 
-// AI analysis
-async function analyzeImage(imageUrl) {
+// =================== AI ANALYSIS ===================
+async function analyzeImage(url) {
   const response = await fetch(endpoint + "vision/v3.2/analyze?visualFeatures=Tags", {
     method: "POST",
-    headers: {
-      "Ocp-Apim-Subscription-Key": key,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ url: imageUrl })
+    headers: { "Ocp-Apim-Subscription-Key": key, "Content-Type": "application/json" },
+    body: JSON.stringify({ url })
   });
   if (!response.ok) throw new Error("AI analysis failed");
   return await response.json();
 }
 
-// Save images
-function saveImages() {
-  localStorage.setItem("images", JSON.stringify(images));
-}
-
-// Render gallery
+// =================== RENDER GALLERY ===================
 function renderGallery() {
   const query = document.getElementById("searchBox").value.toLowerCase().trim();
   const gallery = document.getElementById("gallery");
   gallery.innerHTML = "";
 
-  images.forEach((img) => {
+  images.forEach(img => {
     const match = img.loading || query === "" || img.tagsArray.some(tag => tag.includes(query));
     if (!match) return;
 
@@ -167,13 +147,9 @@ function renderGallery() {
     imageEl.src = img.url;
 
     const p = document.createElement("p");
-    if (img.loading) {
-      p.innerText = "Loading tags...";
-      p.className = "loading";
-    } else {
-      const highlighted = img.tagsArray.map(tag =>
-        query && tag.includes(query) ? `<span class="highlight">${tag}</span>` : tag
-      );
+    if (img.loading) { p.innerText = "Loading tags..."; p.className = "loading"; }
+    else {
+      const highlighted = img.tagsArray.map(tag => query && tag.includes(query) ? `<span class="highlight">${tag}</span>` : tag);
       p.innerHTML = highlighted.join(", ");
     }
 
@@ -183,19 +159,8 @@ function renderGallery() {
     input.className = "tags-input";
     input.placeholder = "Edit tags, separate by comma";
 
-    function saveInput() {
-      img.tagsArray = input.value.split(",").map(t => t.trim().toLowerCase()).filter(t => t);
-      saveImages();
-      renderGallery();
-    }
-
-    input.addEventListener("change", saveInput);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        saveInput();
-      }
-    });
+    input.addEventListener("change", async () => { await saveTags(img, input.value); });
+    input.addEventListener("keydown", async e => { if(e.key==="Enter"){ e.preventDefault(); await saveTags(img, input.value); } });
 
     container.appendChild(imageEl);
     container.appendChild(p);
@@ -204,8 +169,18 @@ function renderGallery() {
   });
 }
 
-// Live search
+// =================== SAVE TAGS ===================
+async function saveTags(img, value) {
+  img.tagsArray = value.split(",").map(t=>t.trim().toLowerCase()).filter(t=>t);
+  if(img.id) await db.collection("photos").doc(img.id).update({ tagsArray: img.tagsArray });
+  renderGallery();
+}
+
+// =================== LIVE SEARCH ===================
 document.getElementById("searchBox").addEventListener("input", renderGallery);
+
+// =================== INITIAL LOAD ===================
+loadImages();
 </script>
 </body>
 </html>
